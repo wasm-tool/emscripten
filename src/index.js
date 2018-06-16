@@ -1,5 +1,5 @@
-import("./add.c").then((m) => {
-  const exports = m.default;
-  // console.log("index.js", exports);
-  document.body.innerHTML = "fib(10) = " + exports._fib(10);
+import("./add.c").then(({_teststring, _fib}) => {
+
+  document.body.innerHTML = "teststring() = " + _teststring() + "<br />";
+  document.body.innerHTML += "fib(10) = " + _fib(10) + "<br />";
 });

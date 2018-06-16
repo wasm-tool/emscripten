@@ -1,3 +1,4 @@
+#include <string.h>
 #include <emscripten.h>
 
 EMSCRIPTEN_KEEPALIVE
@@ -9,4 +10,9 @@ int fib(int n) {
     b = t;
   }
   return b;
+}
+
+EMSCRIPTEN_KEEPALIVE
+char* teststring() {
+  return "abcdefg";
 }
