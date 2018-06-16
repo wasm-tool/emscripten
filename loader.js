@@ -1,17 +1,27 @@
 const {execFileSync} = require('child_process');
 const {join} = require('path');
 const {unlinkSync, writeFileSync, readFileSync} = require('fs');
-const {edit} = require("@webassemblyjs/wasm-edit");
+const {editWithAST} = require("@webassemblyjs/wasm-edit");
 const {decode} = require("@webassemblyjs/wasm-parser");
+const wabt = require("wabt");
 const t = require("@webassemblyjs/ast");
 
-const cwd = process.cwd();
-const emcc = join(cwd, "emsdk", "emscripten", "1.38.1", "emcc");
+const emcc = "emcc";
 
-function inspect(bin) {
-  // FIXME(sven): pass decoderOptions
-  const ast = decode(bin);
+const decoderOpts = {
+  ignoreCodeSection: true,
+  ignoreDataSection: true,
+  ignoreCustomNameSection: true
+};
 
+function wast2wasm(str) {
+  const module = wabt.parseWat("hack.wat", str);
+  const { buffer } = module.toBinary({});
+
+  return buffer.buffer;
+}
+
+function inspect(ast) {
   const exports = [];
   const memory = {};
   const table = {};
@@ -37,9 +47,8 @@ function inspect(bin) {
   return { memory, table, exports };
 }
 
-function transformWasm(bin) {
-  // FIXME(sven): use editWithAst
-  return edit(bin, {
+function transformWasm(ast, bin) {
+  return editWithAST(ast, bin, {
 
     // FIXME(sven): fix https://github.com/webpack/webpack/issues/7454
     Elem({node}) {
@@ -54,7 +63,7 @@ function transformWasm(bin) {
 
       // Webpack only allows memory and table imports from another wasm
       if (node.name === "memory" || node.name === "table") {
-        node.module = "/tmp/hack.wat";
+        node.module = "/tmp/hack.wasm";
       }
 
       if (node.module === "env" || node.module === "global") {
@@ -120,12 +129,12 @@ const generateUserWrapperLoader = (exportNames) => `
 /**
  * Memory and table being imported by the wasm module
  */
-const generateHackWat = info => `
+const generateHackWasm = info => wast2wasm(`
   (module
     (memory (export "memory") ${info.memory.min} ${info.memory.max})
     (table (export "table") ${info.table.min} ${info.table.max} anyfunc)
   )
-`;
+`);
 
 module.exports = function(source) {
   writeFileSync(".tmp.c", source);
@@ -137,13 +146,17 @@ module.exports = function(source) {
     "-s", "MODULARIZE=1"
   ]);
 
-  const bin = transformWasm(readWasm());
-  const info = inspect(bin);
+  let bin = readWasm();
+
+  const ast = decode(bin, decoderOpts);
+  const info = inspect(ast);
+
+  bin = transformWasm(ast, bin);
 
   writeFileSync("/tmp/module.wasm", new Buffer(bin));
   writeFileSync("/tmp/loader.js", readLoader());
 
-  writeFileSync("/tmp/hack.wat", generateHackWat(info));
+  writeFileSync("/tmp/hack.wasm", new Buffer(generateHackWasm(info)));
   writeFileSync("/tmp/wasm-loader.js", generateWasmWrapperLoader());
 
   this.callback(null, generateUserWrapperLoader(info.exports));

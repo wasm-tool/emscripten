@@ -12,19 +12,8 @@ module.exports = {
       {
         test: /\.c$/,
         loader: "./loader"
-      },
-      {
-        test: /\.wat$/,
-        loader: "wast-loader",
-        type: "webassembly/experimental"
       }
     ]
-  },
-  resolve: {
-    alias: {
-      'env': './dist/loader.js',
-      'global': './dist/loader.js'
-    },
   },
   node: {
     fs: "empty"
