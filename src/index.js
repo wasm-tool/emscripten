@@ -1,3 +1,5 @@
-import("./add.c").then((exports) => {
-  document.body.innerHTML = "1+1=" + exports._add(1, 1);
+import("./add.c").then((m) => {
+  const exports = m.default;
+  // console.log("index.js", exports);
+  document.body.innerHTML = "fib(10) = " + exports._fib(10);
 });

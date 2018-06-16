@@ -11,8 +11,7 @@ module.exports = {
     rules: [
       {
         test: /\.c$/,
-        loader: "./loader",
-        type: "webassembly/experimental"
+        loader: "./loader"
       },
       {
         test: /\.wat$/,
