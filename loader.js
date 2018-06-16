@@ -40,6 +40,8 @@ function inspect(bin) {
 function transformWasm(bin) {
   // FIXME(sven): use editWithAst
   return edit(bin, {
+
+    // FIXME(sven): fix https://github.com/webpack/webpack/issues/7454
     Elem({node}) {
       const offset = t.objectInstruction("const", "i32", [
         t.numberLiteralFromRaw(0)
