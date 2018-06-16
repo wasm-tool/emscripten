@@ -11,7 +11,7 @@ module.exports = {
     rules: [
       {
         test: /\.c$/,
-        loader: "./loader"
+        loader: "../loader"
       }
     ]
   },
