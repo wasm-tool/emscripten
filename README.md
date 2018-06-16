@@ -2,6 +2,8 @@
 
 > Emscripten loader for Webpack
 
+**Attention**: loader is an experimentation.
+
 ## Installation
 
 ```sh
