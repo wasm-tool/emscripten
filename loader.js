@@ -1,165 +1,73 @@
-const {execFileSync} = require('child_process');
-const {join} = require('path');
-const {unlinkSync, writeFileSync, readFileSync} = require('fs');
-const {editWithAST} = require("@webassemblyjs/wasm-edit");
-const {decode} = require("@webassemblyjs/wasm-parser");
-const wabt = require("wabt");
-const t = require("@webassemblyjs/ast");
+const { execFileSync } = require("child_process");
+const { join, basename } = require("path");
+const {
+  existsSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync
+} = require("fs");
+const { tmpdir } = require("os");
+const loaderUtils = require("loader-utils");
 
 const emcc = "emcc";
 
-const decoderOpts = {
-  ignoreCodeSection: true,
-  ignoreDataSection: true,
-  ignoreCustomNameSection: true
-};
-
-function wast2wasm(str) {
-  const module = wabt.parseWat("hack.wat", str);
-  const { buffer } = module.toBinary({});
-
-  return buffer.buffer;
+function createTempDir() {
+  const path = join(tmpdir(), "wasm-tool-emscripten");
+  if (!existsSync(path)) {
+    mkdirSync(path);
+  }
+  return path;
 }
 
-function inspect(ast) {
-  const exports = [];
-  const memory = {};
-  const table = {};
-
-  t.traverse(ast, {
-
-    ModuleExport({ node }) {
-      exports.push(node.name);
-    },
-
-    Table({ node }) {
-      table.min = node.limits.min;
-      table.max = node.limits.max;
-    },
-
-    Memory({ node }) {
-      memory.min = node.limits.min;
-      memory.max = node.limits.max;
-    }
-
-  });
-
-  return { memory, table, exports };
+function runEmcc(cwd, main) {
+  const args = [main, "-O3", "-s", "WASM=1", "-s", "MODULARIZE=1"];
+  const options = { cwd };
+  return execFileSync(emcc, args, options);
 }
-
-function transformWasm(ast, bin) {
-  return editWithAST(ast, bin, {
-
-    // FIXME(sven): fix https://github.com/webpack/webpack/issues/7454
-    Elem({node}) {
-      const offset = t.objectInstruction("const", "i32", [
-        t.numberLiteralFromRaw(0)
-      ]);
-
-      node.offset = [offset];
-    },
-
-    ModuleImport({node}) {
-
-      // Webpack only allows memory and table imports from another wasm
-      if (node.name === "memory" || node.name === "table") {
-        node.module = "/tmp/hack.wasm";
-      }
-
-      if (node.module === "env" || node.module === "global") {
-        node.module = "/tmp/wasm-loader.js";
-      }
-    }
-  });
-}
-
-function readWasm() {
-  const b = readFileSync("a.out.wasm", null);
-  unlinkSync("a.out.wasm");
-
-  return b;
-}
-
-function readLoader() {
-  const loader = readFileSync("a.out.js", "utf8");
-  unlinkSync("a.out.js");
-
-  return loader;
-}
-
-/**
- * Loader being imported by the wasm module
- */
-const generateWasmWrapperLoader = () => `
-  const Module = require("/tmp/loader.js");
-
-  const m = new Module({
-    wasmBinary: true,
-    instantiateWasm: (info, receiveInstance) => {
-      receiveInstance({ exports: true });
-      return true;
-    }
-  });
-
-  module.exports = m.asmLibraryArg;
-`;
-
-/**
- * Loader being imported by the user
- */
-const generateUserWrapperLoader = (exportNames) => `
-  import Module from "/tmp/loader.js";
-  import * as instanceExports from "/tmp/module.wasm";
-
-  const m = new Module({
-    wasmBinary: true,
-    instantiateWasm: (info, receiveInstance) => {
-      receiveInstance({ exports: instanceExports });
-      return instanceExports;
-    }
-  });
-
-  ${exportNames.map(
-    name => "export const " + name + " = instanceExports." + name
-  ).join(";")}
-
-  export default m;
-`;
-
-/**
- * Memory and table being imported by the wasm module
- */
-const generateHackWasm = info => wast2wasm(`
-  (module
-    (memory (export "memory") ${info.memory.min} ${info.memory.max})
-    (table (export "table") ${info.table.min} ${info.table.max} anyfunc)
-  )
-`);
 
 module.exports = function(source) {
-  writeFileSync(".tmp.c", source);
+  const tmpdir = createTempDir();
+  const filename = basename(this.resource);
 
-  execFileSync(emcc, [
-    ".tmp.c",
-    // "-O3",
-    "-s", "WASM=1",
-    "-s", "MODULARIZE=1"
-  ]);
+  writeFileSync(join(tmpdir, filename), source);
+  runEmcc(tmpdir, filename);
 
-  let bin = readWasm();
+  const options = loaderUtils.getOptions(this) || {};
 
-  const ast = decode(bin, decoderOpts);
-  const info = inspect(ast);
+  const publicPath =
+    typeof options.publicPath === "string"
+      ? options.publicPath === "" || options.publicPath.endsWith("/")
+        ? options.publicPath
+        : `${options.publicPath}/`
+      : typeof options.publicPath === "function"
+      ? options.publicPath(this.resourcePath, this.rootContext)
+      : this._compilation.outputOptions.publicPath || "dist";
 
-  bin = transformWasm(ast, bin);
+  if (!existsSync(publicPath)) {
+    mkdirSync(publicPath);
+  }
 
-  writeFileSync("/tmp/module.wasm", new Buffer(bin));
-  writeFileSync("/tmp/loader.js", readLoader());
+  const wasmPath = join(publicPath, filename + ".wasm");
+  const wasm = readFileSync(join(tmpdir, "a.out.wasm"));
+  writeFileSync(wasmPath, wasm);
 
-  writeFileSync("/tmp/hack.wasm", new Buffer(generateHackWasm(info)));
-  writeFileSync("/tmp/wasm-loader.js", generateWasmWrapperLoader());
+  return `
+    import Load from "${join(tmpdir, "a.out.js")}";
 
-  this.callback(null, generateUserWrapperLoader(info.exports));
+    export async function then(cb) {
+      const m = Load({
+        locateFile(path) {
+          if(path.endsWith('.wasm')) {
+            return "${filename + ".wasm"}";
+          }
+          return path;
+        }
+      });
 
-  unlinkSync(".tmp.c");
+      m.onRuntimeInitialized = () => {
+        delete m.then;
+        cb(m);
+      }
+    }
+  `;
 };

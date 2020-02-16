@@ -1,8 +1,6 @@
 # @wasm-tool/emscripten
 
-> Emscripten loader for Webpack
-
-**Attention**: loader is an experimentation.
+> Emscripten loader for webpack
 
 ## Installation
 
@@ -10,9 +8,9 @@
 npm i -D @wasm-tool/emscripten
 ```
 
-## Usage
+## Usage: webpack
 
-Add the loader and mock the `fs` module in your Webpack configuration:
+Add the loader and mock the `fs` module in your webpack configuration:
 
 ```js
 module.exports = {
@@ -21,6 +19,7 @@ module.exports = {
     rules: [
       {
         test: /\.c$/,
+        type: "javascript/auto",
         loader: "@wasm-tool/emscripten"
       }
     ]
@@ -31,6 +30,8 @@ module.exports = {
   // ...
 };
 ```
+
+We need to set the `type` to JavaScript to bypass webpack's wasm support (as a workaround, for now). Which will also prevent the loading to work correclty in non-web environements.
 
 You can then directly import c files:
 
