@@ -1,6 +1,6 @@
 {
   "name": "@wasm-tool/emscripten",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "description": "Emscripten loader for webpack",
   "main": "loader.js",
   "scripts": {
